@@ -12,15 +12,19 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from collections import OrderedDict
 import voluptuous
 
 
-class SchemaNode(dict):
+class SchemaNode(OrderedDict):
 
-    def __init__(self, description=None, *args, **kwargs):
+    def __init__(self, description=None, format=None, *args, **kwargs):
+        super(SchemaNode, self).__init__(*args, **kwargs)
         self["type"] = self.typename
         if description:
             self["description"] = description
+        if format:
+            self["format"] = format
 
 
 class ObjectNode(SchemaNode):
@@ -43,6 +47,10 @@ class ArrayNode(SchemaNode):
 
 class StringNode(SchemaNode):
     typename = "string"
+
+
+class BoolNode(SchemaNode):
+    typename = "boolean"
 
 
 class NumberNode(SchemaNode):
@@ -77,31 +85,48 @@ def get_jsonschema(schema, title=None, description=None):
     return jsonschema
 
 
-def jsonify(schema):
+def jsonify(schema, **kwargs):
 
     if isinstance(schema, dict):
-        p = {}
+        p = OrderedDict()
         r = []
 
         for key, value in schema.iteritems():
+            key_args = {}
+            if hasattr(key, 'description'):
+                key_args['description'] = getattr(key, 'description')
             if isinstance(key, voluptuous.Required):
                 key = key.schema
                 r.append(key)
+            elif isinstance(key, voluptuous.Optional):
+                key = key.schema
 
-            p[key] = jsonify(value)
+            p[key] = jsonify(value, **key_args)
 
-        return ObjectNode(properties=p, required=r)
+        return ObjectNode(properties=p, required=r, **kwargs)
 
     elif isinstance(schema, list):
         key = schema[0]
         i = jsonify(key)
-        return ArrayNode(items=i)
+        return ArrayNode(items=i, **kwargs)
 
-    elif schema is str:
-        return StringNode()
+    elif schema in (str, unicode, basestring):
+        return StringNode(**kwargs)
+
+    elif isinstance(schema, voluptuous.validators.Datetime):
+        return StringNode(format="date-time", **kwargs)
 
     elif schema is int:
-        return NumberNode()
+        return NumberNode(**kwargs)
+
+    elif schema is bool:
+        return BoolNode(**kwargs)
+
+    elif isinstance(schema, voluptuous.Any):
+        v = OrderedDict([('enum', list(schema.validators))])
+        if 'description' in kwargs:
+            v['description'] = kwargs['description']
+        return v
 
     elif hasattr(schema, "func_name") and schema.func_name == "Range":
         range_vars = dict(zip(schema.func_code.co_freevars,
@@ -113,4 +138,4 @@ def jsonify(schema):
         min_included = range_vars['min_included']
         msg = range_vars['msg']
 
-        return RangeNode(maximum, max_included, minimum, min_included, msg)
+        return RangeNode(maximum, max_included, minimum, min_included, msg, **kwargs)
