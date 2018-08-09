@@ -91,7 +91,7 @@ def jsonify(schema, **kwargs):
         p = OrderedDict()
         r = []
 
-        for key, value in schema.iteritems():
+        for key, value in sorted(schema.items()):
             key_args = {}
             if hasattr(key, 'description'):
                 key_args['description'] = getattr(key, 'description')
